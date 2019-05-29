@@ -5,11 +5,14 @@ require 'monetize/core_extensions'
 require 'monetize/errors'
 require 'monetize/version'
 require 'monetize/parser'
+require 'monetize/new_parser'
 require 'monetize/collection'
 
 module Monetize
   # Class methods
   class << self
+    attr_writer :parser_class
+
     # @attr_accessor [true, false] assume_from_symbol Use this to enable the
     #   ability to assume the currency from a passed symbol
     attr_accessor :assume_from_symbol
@@ -19,6 +22,10 @@ module Monetize
     # though, it will try to determine the correct separator by itself. Set this
     # to true to enforce the delimiters set in the currency all the time.
     attr_accessor :enforce_currency_delimiters
+
+    def parser_class
+      @parser_class || Monetize::Parser
+    end
 
     def parse(input, currency = Money.default_currency, options = {})
       parse! input, currency, options
@@ -30,7 +37,7 @@ module Monetize
       return input if input.is_a?(Money)
       return from_numeric(input, currency) if input.is_a?(Numeric)
 
-      parser = Monetize::Parser.new(input, currency, options)
+      parser = parser_class.new(input, currency, options)
       amount, currency = parser.parse
 
       Money.from_amount(amount, currency)
@@ -73,3 +80,5 @@ module Monetize
     end
   end
 end
+
+Monetize.parser_class = Monetize::NewParser

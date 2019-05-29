@@ -122,7 +122,7 @@ describe Monetize, 'core extensions' do
 
       it 'works as documented' do
         STRING_TO_MONEY.each do |string, money|
-          expect(string.to_money).to eq money
+          expect(string.to_money).to eq(money), "input = #{string}"
         end
       end
 

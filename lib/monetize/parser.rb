@@ -8,7 +8,7 @@ module Monetize
       '£'  => 'GBP',
       '₤'  => 'GBP',
       'R$' => 'BRL',
-      'R'  => 'ZAR',
+      # 'R'  => 'ZAR',
       '¥'  => 'JPY',
       'C$' => 'CAD',
       '₼'  => 'AZN',

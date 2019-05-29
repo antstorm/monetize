@@ -5,5 +5,6 @@ Coveralls.wear!
 require 'money'
 
 RSpec.configure do |config|
-  config.order = 'random'
+  # config.order = 'random'
+  # config.fail_fast = true
 end
