@@ -204,9 +204,9 @@ describe Monetize do
     end
 
     it 'does not return a price for completely invalid input' do
-      expect(Monetize.parse(nil)).to eq Money.empty
-      expect(Monetize.parse('hellothere')).to eq Money.empty
-      expect(Monetize.parse('')).to eq Money.empty
+      expect(Monetize.parse(nil)).to eq(nil)
+      expect(Monetize.parse('hellothere')).to eq(nil)
+      expect(Monetize.parse('')).to eq(nil)
     end
 
     it 'handles negative inputs' do
@@ -552,5 +552,9 @@ describe Monetize do
     it 'gives the same results' do
       expect(4.635.to_money).to eq '4.635'.to_money
     end
+  end
+
+  it 'detects currency correctly' do
+    expect('1.23456 EUR'.to_money).to eq Money.new(123.456, 'EUR')
   end
 end

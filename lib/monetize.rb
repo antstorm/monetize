@@ -29,7 +29,8 @@ module Monetize
 
     def parse(input, currency = Money.default_currency, options = {})
       parse! input, currency, options
-    rescue Error
+    rescue Error => e
+      p "Ignoring error: #{e}"
       nil
     end
 

@@ -1,7 +1,13 @@
 require 'monetize/parser'
+require 'monetize/tokenizer'
 
 module Monetize
   class NewParser
+    # TODO: error subclasses with detailed explanation
+    # TODO: check if decimal mark is a thousands separator (1,000 USD)
+    # TODO: maybe liberal amount match with an inspection later
+    # TODO: maybe make Tokenizer a class holding all the values
+
     def initialize(input, fallback_currency = Money.default_currency, options = {})
       @input = input.to_s
       @options = options
@@ -12,98 +18,56 @@ module Monetize
       puts "\n-----"
       puts input
 
-      result = {}
+      result = Tokenizer.new(input, options).process
 
-      result[:symbol] = match_symbol
-      result[:sign] = match_sign
-      result[:amount] = match_amount
-      result[:currency_iso] = match_currency_iso
-
-      result = result.select { |key, value| !!value }.sort_by { |key, value| value.offset(0).first }
-
-      raise "invalid input - #{result.map(&:first)}" unless ALLOWED_FORMATS.include?(result.map(&:first))
-
-      result = result.to_h
+      unless ALLOWED_FORMATS.include?(result.map(&:first))
+        raise ParseError, "invalid input - #{result.map(&:first)}"
+      end
 
       p result
 
-      amount = parse_amount(result[:amount].to_s, result[:sign].to_s)
+      amount = result.find { |token| token.type == :amount }
+      sign = result.find { |token| token.type == :sign }
+      symbol = result.find { |token| token.type == :symbol }
+      currency_iso = result.find { |token| token.type == :currency_iso }
+
+      amount = parse_amount(amount.match, sign&.match)
 
       currency =
-        if result[:symbol] && assume_from_symbol?
-          parse_symbol(result[:symbol].to_s)
-        elsif result[:currency_iso]
-          parse_currency_iso(result[:currency_iso].to_s)
+        if symbol && assume_from_symbol?
+          parse_symbol(symbol.match.to_s)
+        elsif currency_iso
+          parse_currency_iso(currency_iso.match.to_s)
         else
           fallback_currency
         end
 
-      # puts "parsed = #{result.map(&:last).join}"
-      # p result
-
-      # result.map(&:last).join
-
-      Money.from_amount(amount, currency)
+      [amount, currency]
     end
 
     private
 
     # figure out what to do with whitespaces & signs
     ALLOWED_FORMATS = [
-      [:amount],
-      [:sign, :amount],
-      [:symbol, :amount],
-      [:sign, :symbol, :amount],
-      [:symbol, :sign, :amount],
-
-      [:symbol, :amount, :sign], # ?
-
-      [:amount, :symbol],
-      [:sign, :amount, :symbol],
-      [:currency_iso, :amount],
-      [:currency_iso, :sign, :amount],
-      [:amount, :currency_iso],
-      [:sign, :amount, :currency_iso]
+      [:amount],                       # 9.99
+      [:sign, :amount],                # -9.99
+      [:symbol, :amount],              # £9.99
+      [:sign, :symbol, :amount],       # -£9.99
+      [:symbol, :sign, :amount],       # £-9.99
+      [:symbol, :amount, :sign],       # £9.99-
+      [:amount, :symbol],              # 9.99£
+      [:sign, :amount, :symbol],       # -9.99£
+      [:currency_iso, :amount],        # GBP 9.99
+      [:currency_iso, :sign, :amount], # GBP -9.99
+      [:amount, :currency_iso],        # 9.99 GBP
+      [:sign, :amount, :currency_iso]  # -9.99 GBP
     ].freeze
 
     attr_reader :input, :fallback_currency, :options
 
-    SYMBOLS = Monetize::Parser::CURRENCY_SYMBOLS.keys.map { |symbol| Regexp.escape(symbol) }.freeze
-    SYMBOL_REGEXP = Regexp.new(SYMBOLS.join('|')).freeze
-
-    SIGN_REGEXP = /[\-\+]/.freeze
-
-    THOUSAND_SEPARATORS = /[\.\ ,]/.freeze
-    DECIMAL_MARKS = /[\.,]/.freeze
-    MULTIPLIERS = Monetize::Parser::MULTIPLIER_SUFFIXES.keys.join('|').freeze
-
-    # how to tell between decimal mark & thousands separator
-    AMOUNT_REGEXP = /\d+(#{THOUSAND_SEPARATORS}\d{3})*(#{DECIMAL_MARKS}\d+)?(#{MULTIPLIERS})?(?!(\d|#{DECIMAL_MARKS}))/.freeze
-
-    CURRENCY_ISO_REGEXP = /(?<![A-Z])[A-Z]{3}(?![A-Z])/i.freeze
-
-    def match_symbol
-      input.match(SYMBOL_REGEXP)
-    end
-
-    def match_sign
-      input.match(SIGN_REGEXP)
-    end
-
-    def match_amount
-      input.scan(AMOUNT_REGEXP) { p $~ }
-      input.match(AMOUNT_REGEXP)
-    end
-
-    def match_currency_iso
-      input.match(CURRENCY_ISO_REGEXP)
-      # match_data if match_data && Money::Currency.find(match_data.to_s)
-    end
-
     def parse_amount(amount, sign)
-      multiplier = amount.match(/#{MULTIPLIERS}/)
-      amount = amount.gsub(/#{MULTIPLIERS}/, '')
-      amount = amount.gsub(' ', '')
+      multiplier = amount[:multiplier]
+      amount = amount[:amount].gsub(' ', '')
 
       used_delimiters = amount.scan(/[^\d]/).uniq
 
@@ -123,14 +87,11 @@ module Monetize
 
           amount.to_f
         else
-          raise 'invalid amount of delimiters used'
+          raise ParseError, 'invalid amount of delimiters used'
         end
 
-      if multiplier
-        num = num * (10 ** Monetize::Parser::MULTIPLIER_SUFFIXES[multiplier.to_s])
-      end
-
-      num = num * -1 if sign == '-'
+      num = apply_multiplier(num, multiplier)
+      num = apply_sign(num, sign.to_s)
 
       num
     end
@@ -144,7 +105,18 @@ module Monetize
     end
 
     def assume_from_symbol?
-      options.key?(:assume_from_symbol) ? options[:assume_from_symbol] : Monetize.assume_from_symbol
+      options.fetch(:assume_from_symbol) { Monetize.assume_from_symbol }
+    end
+
+    def apply_multiplier(num, multiplier)
+      return num unless multiplier
+
+      exponent = Monetize::Parser::MULTIPLIER_SUFFIXES[multiplier.to_s.upcase]
+      num * 10**exponent
+    end
+
+    def apply_sign(num, sign)
+      sign == '-' ? num * -1 : num
     end
   end
 end
